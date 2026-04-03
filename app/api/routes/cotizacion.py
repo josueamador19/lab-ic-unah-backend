@@ -16,10 +16,6 @@ router = APIRouter()
     summary="Registrar solicitud de cotización",
 )
 async def crear_cotizacion(payload: CotizacionRequest):
-    """
-    Recibe el formulario del frontend, escribe una fila en Google Sheets
-    y (opcionalmente) envía correo de confirmación.
-    """
     try:
         fila = append_cotizacion(payload)
     except HttpError as e:
@@ -35,11 +31,13 @@ async def crear_cotizacion(payload: CotizacionRequest):
             detail="Error interno del servidor.",
         )
 
-    # Correo de confirmación (no bloquea la respuesta si falla)
+    # Correo de confirmación
     try:
+        logger.info(f"[EMAIL] Intentando enviar correo a {payload.correo}...")
         send_confirmation(payload, fila)
+        logger.info(f"[EMAIL] Correo enviado exitosamente a {payload.correo}")
     except Exception as e:
-        logger.warning(f"Email no enviado: {e}")
+        logger.error(f"[EMAIL] Falló el envío a {payload.correo}: {type(e).__name__}: {e}")
 
     return CotizacionResponse(
         ok=True,

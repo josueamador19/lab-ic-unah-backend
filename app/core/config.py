@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     def origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
 
+    # SMTP — Gmail + App Password
+    SMTP_USER: str = ""
+    SMTP_PASS: str = ""
+
     # App
     APP_ENV: str = "development"
 
