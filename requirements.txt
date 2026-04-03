@@ -6,7 +6,6 @@ uvicorn[standard]==0.30.6
 
 
 pydantic[email]==1.10.13
-pydantic-settings==1.10.13
 
 # Google APIs
 google-auth==2.35.0
