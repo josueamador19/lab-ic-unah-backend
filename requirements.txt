@@ -4,6 +4,7 @@ fastapi==0.95.2
 # ASGI server
 uvicorn[standard]==0.30.6
 
+
 pydantic[email]==1.10.13
 pydantic-settings==1.10.13
 
