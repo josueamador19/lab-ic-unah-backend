@@ -3,10 +3,10 @@ from typing import List, Optional
 
 
 class ServicioItem(BaseModel):
-    code: str          # Ej: "SU-01"
-    name: str          # Ej: "Contenido de Humedad"
-    norma: str         # Ej: "ASTM D2216"
-    sub: Optional[str] = None  # Solo acero — diámetro de varilla
+    code: str
+    name: str
+    norma: str
+    sub: Optional[str] = None
 
 
 class UbicacionModel(BaseModel):
@@ -17,13 +17,17 @@ class UbicacionModel(BaseModel):
 
 class CotizacionRequest(BaseModel):
     # Datos personales
-    nombre: str
-    correo: EmailStr
-    empresa: Optional[str] = None
+    nombre:   str
+    correo:   EmailStr
+    empresa:  Optional[str] = None
     telefono: Optional[str] = None
 
     # Servicios
     servicios: List[ServicioItem]
+
+    # Cantidades (solo para servicios de laboratorio, no topografía)
+    muestras: Optional[int] = None
+    ensayos:  Optional[int] = None
 
     # Detalles
     descripcion: Optional[str] = None
@@ -47,6 +51,6 @@ class CotizacionRequest(BaseModel):
 
 
 class CotizacionResponse(BaseModel):
-    ok: bool
+    ok:      bool
     message: str
-    fila: Optional[int] = None  # Número de fila escrita en Sheets
+    fila:    Optional[int] = None

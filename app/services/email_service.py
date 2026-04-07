@@ -1,6 +1,8 @@
 """
-Envío de correo de confirmación al solicitante.
-Usa Gmail + App Password (smtplib) — sin dependencias externas.
+Envío de correos vía Gmail SMTP (App Password).
+
+  1. send_confirmation → correo de confirmación al solicitante
+  2. send_alert        → correo de alerta interna al administrador
 """
 import smtplib
 import ssl
@@ -13,6 +15,8 @@ from app.models.cotizacion import CotizacionRequest
 
 logger = logging.getLogger(__name__)
 
+
+# ── Helpers compartidos ───────────────────────────────────────────────────────
 
 def _build_servicios_rows(data: CotizacionRequest) -> str:
     rows = ""
@@ -37,6 +41,8 @@ def _build_servicios_rows(data: CotizacionRequest) -> str:
         </tr>"""
     return rows
 
+
+# ── Correo de confirmación al solicitante ─────────────────────────────────────
 
 def _build_html(data: CotizacionRequest) -> str:
     nombre_corto = data.nombre.strip().split()[0]
@@ -99,7 +105,6 @@ def _build_html(data: CotizacionRequest) -> str:
     <tr>
       <td style="background:#ffffff;padding:36px 40px;">
 
-        <!-- Saludo -->
         <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#1e3a8a;">
           Hola, {nombre_corto} 👋
         </p>
@@ -109,7 +114,6 @@ def _build_html(data: CotizacionRequest) -> str:
           en un plazo de <strong>24 a 48 horas hábiles</strong>.
         </p>
 
-        <!-- Datos del solicitante -->
         <div style="background:#f8faff;border:1px solid #e0e7ff;border-radius:10px;
                     padding:18px 22px;margin-bottom:24px;">
           <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
@@ -124,7 +128,6 @@ def _build_html(data: CotizacionRequest) -> str:
           {telefono_html}
         </div>
 
-        <!-- Servicios solicitados -->
         <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
                   letter-spacing:.08em;text-transform:uppercase;">
           Ensayo{plural} solicitado{plural} ({cantidad})
@@ -136,16 +139,13 @@ def _build_html(data: CotizacionRequest) -> str:
             <tr style="background:#f1f5f9;">
               <th style="padding:10px 14px;text-align:left;font-size:10px;
                          font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">
-                Código</th>
+                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Código</th>
               <th style="padding:10px 14px;text-align:left;font-size:10px;
                          font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">
-                Ensayo</th>
+                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Ensayo</th>
               <th style="padding:10px 14px;text-align:left;font-size:10px;
                          font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">
-                Norma</th>
+                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Norma</th>
             </tr>
           </thead>
           <tbody>
@@ -155,7 +155,6 @@ def _build_html(data: CotizacionRequest) -> str:
 
         {descripcion_html}
 
-        <!-- Próximos pasos -->
         <div style="margin-top:28px;background:#fffbeb;border:1px solid #fde68a;
                     border-radius:10px;padding:18px 22px;">
           <p style="margin:0 0 8px;font-size:10px;font-weight:700;color:#92400e;
@@ -204,7 +203,7 @@ def _build_html(data: CotizacionRequest) -> str:
 
 
 def _build_plain(data: CotizacionRequest) -> str:
-    nombre_corto = data.nombre.strip().split()[0]
+    nombre_corto  = data.nombre.strip().split()[0]
     servicios_txt = "\n".join(
         f"  • [{s.code}] {s.name} — {s.norma}" for s in data.servicios
     )
@@ -233,16 +232,201 @@ Este es un correo automático, por favor no responda a este mensaje.
 """
 
 
+# ── Correo de alerta interna al administrador ─────────────────────────────────
+
+def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
+    cantidad      = len(data.servicios)
+    plural        = "s" if cantidad > 1 else ""
+    servicios_rows = _build_servicios_rows(data)
+
+    empresa_html = (
+        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
+        f"<strong>Empresa / Institución:</strong> {data.empresa}</p>"
+    ) if data.empresa else ""
+
+    telefono_html = (
+        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
+        f"<strong>Teléfono:</strong> {data.telefono}</p>"
+    ) if data.telefono else ""
+
+    muestras_html = (
+        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
+        f"<strong>N° de muestras:</strong> {data.muestras}</p>"
+    ) if data.muestras is not None else ""
+
+    ensayos_html = (
+        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
+        f"<strong>N° de ensayos:</strong> {data.ensayos}</p>"
+    ) if data.ensayos is not None else ""
+
+    descripcion_html = (
+        f"""<div style="margin-top:16px;padding:14px 18px;background:#f9fafb;
+                        border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;">
+              <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#6b7280;
+                        letter-spacing:.08em;text-transform:uppercase;">Detalles adicionales</p>
+              <p style="margin:0;font-size:13px;color:#374151;line-height:1.6;">{data.descripcion}</p>
+            </div>"""
+    ) if data.descripcion else ""
+
+    ubicacion_html = (
+        f"""<div style="margin-top:16px;padding:14px 18px;background:#f0fdf4;
+                        border:1px solid #86efac;border-radius:10px;">
+              <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#166534;
+                        letter-spacing:.08em;text-transform:uppercase;">Ubicación del proyecto</p>
+              <p style="margin:0;font-size:13px;color:#166534;">{data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}</p>
+            </div>"""
+    ) if data.ubicacion else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;
+             font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"
+       style="background:#f3f4f6;padding:40px 16px;">
+  <tr><td align="center">
+  <table width="620" cellpadding="0" cellspacing="0"
+         style="max-width:620px;width:100%;">
+
+    <!-- HEADER -->
+    <tr>
+      <td style="background:linear-gradient(135deg,#064e3b 0%,#059669 100%);
+                 border-radius:16px 16px 0 0;padding:28px 40px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#6ee7b7;
+                  letter-spacing:.12em;text-transform:uppercase;">
+          Alerta interna — Lab. Ingeniería Civil UNAH
+        </p>
+        <h1 style="margin:0 0 4px;font-size:20px;font-weight:800;color:#ffffff;">
+          🔔 Nueva solicitud de cotización
+        </h1>
+        <p style="margin:0;font-size:12px;color:#a7f3d0;">
+          Referencia de fila en Sheets: <strong style="color:#fff;">#{fila}</strong>
+        </p>
+      </td>
+    </tr>
+
+    <!-- CUERPO -->
+    <tr>
+      <td style="background:#ffffff;padding:32px 40px;">
+
+        <!-- Datos del solicitante -->
+        <div style="background:#f8faff;border:1px solid #e0e7ff;border-radius:10px;
+                    padding:18px 22px;margin-bottom:24px;">
+          <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
+                    letter-spacing:.08em;text-transform:uppercase;">Datos del solicitante</p>
+          <p style="margin:0 0 6px;font-size:13px;color:#374151;">
+            <strong>Nombre:</strong> {data.nombre}
+          </p>
+          <p style="margin:0 0 6px;font-size:13px;color:#374151;">
+            <strong>Correo:</strong>
+            <a href="mailto:{data.correo}" style="color:#3b5bdb;">{data.correo}</a>
+          </p>
+          {empresa_html}
+          {telefono_html}
+          {muestras_html}
+          {ensayos_html}
+        </div>
+
+        <!-- Servicios -->
+        <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
+                  letter-spacing:.08em;text-transform:uppercase;">
+          Ensayo{plural} solicitado{plural} ({cantidad})
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0"
+               style="border:1px solid #e5e7eb;border-radius:10px;
+                      overflow:hidden;border-collapse:collapse;margin-bottom:8px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:10px 14px;text-align:left;font-size:10px;
+                         font-weight:700;color:#6b7280;letter-spacing:.06em;
+                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Código</th>
+              <th style="padding:10px 14px;text-align:left;font-size:10px;
+                         font-weight:700;color:#6b7280;letter-spacing:.06em;
+                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Ensayo</th>
+              <th style="padding:10px 14px;text-align:left;font-size:10px;
+                         font-weight:700;color:#6b7280;letter-spacing:.06em;
+                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Norma</th>
+            </tr>
+          </thead>
+          <tbody>
+            {servicios_rows}
+          </tbody>
+        </table>
+
+        {descripcion_html}
+        {ubicacion_html}
+
+      </td>
+    </tr>
+
+    <!-- FOOTER -->
+    <tr>
+      <td style="background:#064e3b;border-radius:0 0 16px 16px;
+                 padding:20px 40px;text-align:center;">
+        <p style="margin:0;font-size:11px;color:#6ee7b7;">
+          Sistema de cotizaciones — Laboratorios de Ingeniería Civil UNAH
+        </p>
+        <p style="margin:6px 0 0;font-size:10px;color:#34d399;">
+          Este correo es de uso interno. No reenviar.
+        </p>
+      </td>
+    </tr>
+
+  </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+
+def _build_alert_plain(data: CotizacionRequest, fila: int) -> str:
+    servicios_txt = "\n".join(
+        f"  • [{s.code}] {s.name} — {s.norma}" for s in data.servicios
+    )
+    muestras_txt  = f"\nN° de muestras : {data.muestras}" if data.muestras is not None else ""
+    ensayos_txt   = f"\nN° de ensayos  : {data.ensayos}"  if data.ensayos  is not None else ""
+    ubicacion_txt = (
+        f"\nUbicación      : {data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}"
+    ) if data.ubicacion else ""
+
+    return f"""🔔 NUEVA SOLICITUD DE COTIZACIÓN — Ref. #{fila}
+
+SOLICITANTE
+  Nombre   : {data.nombre}
+  Correo   : {data.correo}
+  Empresa  : {data.empresa  or '—'}
+  Teléfono : {data.telefono or '—'}{muestras_txt}{ensayos_txt}
+
+SERVICIOS SOLICITADOS ({len(data.servicios)}):
+{servicios_txt}
+
+{"DETALLES: " + data.descripcion if data.descripcion else ""}{ubicacion_txt}
+
+---
+Sistema de cotizaciones — Lab. Ingeniería Civil UNAH
+"""
+
+
+# ── Funciones públicas ────────────────────────────────────────────────────────
+
+def _smtp_send(msg: MIMEMultipart) -> None:
+    """Abre conexión SMTP y envía el mensaje."""
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(settings.SMTP_USER, settings.SMTP_PASS)
+        server.send_message(msg)
+
+
 def send_confirmation(data: CotizacionRequest, fila: int) -> None:
-    """
-    Envía un correo HTML de confirmación al solicitante vía Gmail SMTP.
-    Lanza excepción si falla (el llamador la captura y solo loguea el warning).
-    """
+    """Correo de confirmación al solicitante."""
     if not settings.SMTP_USER or not settings.SMTP_PASS:
         logger.warning("[EMAIL] SMTP_USER o SMTP_PASS no configurados — correo omitido.")
         return
 
-    msg = MIMEMultipart("alternative")
+    msg            = MIMEMultipart("alternative")
     msg["Subject"] = f"✅ Solicitud recibida — Lab. Ingeniería Civil UNAH (Ref. #{fila})"
     msg["From"]    = settings.SMTP_USER
     msg["To"]      = data.correo
@@ -250,9 +434,25 @@ def send_confirmation(data: CotizacionRequest, fila: int) -> None:
     msg.attach(MIMEText(_build_plain(data), "plain", "utf-8"))
     msg.attach(MIMEText(_build_html(data),  "html",  "utf-8"))
 
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(settings.SMTP_USER, settings.SMTP_PASS)
-        server.send_message(msg)
-
+    _smtp_send(msg)
     logger.info(f"[EMAIL] Confirmación enviada a {data.correo} — Ref. #{fila}")
+
+    # Alerta interna — se envía en el mismo bloque para reutilizar la conexión
+    send_alert(data, fila)
+
+
+def send_alert(data: CotizacionRequest, fila: int) -> None:
+    """Correo de alerta interna al administrador (SMTP_USER)."""
+    if not settings.SMTP_USER or not settings.SMTP_PASS:
+        return
+
+    msg            = MIMEMultipart("alternative")
+    msg["Subject"] = f"🔔 Nueva solicitud #{fila} — {data.nombre} ({len(data.servicios)} servicio{'s' if len(data.servicios) > 1 else ''})"
+    msg["From"]    = settings.SMTP_USER
+    msg["To"]      = settings.SMTP_USER   # <-- a ti mismo
+
+    msg.attach(MIMEText(_build_alert_plain(data, fila), "plain", "utf-8"))
+    msg.attach(MIMEText(_build_alert_html(data, fila),  "html",  "utf-8"))
+
+    _smtp_send(msg)
+    logger.info(f"[EMAIL] Alerta interna enviada a {settings.SMTP_USER} — Ref. #{fila}")
