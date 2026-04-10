@@ -3,37 +3,27 @@ from typing import List, Optional
 
 
 class ServicioItem(BaseModel):
-    code: str
-    name: str
-    norma: str
-    sub: Optional[str] = None
+    code:     str
+    name:     str
+    norma:    Optional[str] = None  # null para servicios de topografía
+    sub:      Optional[str] = None
+    muestras: Optional[int] = None  # por servicio, solo lab (no topo)
 
 
 class UbicacionModel(BaseModel):
-    lat: str
-    lng: str
+    lat:     str
+    lng:     str
     address: Optional[str] = None
 
 
 class CotizacionRequest(BaseModel):
-    # Datos personales
-    nombre:   str
-    correo:   EmailStr
-    empresa:  Optional[str] = None
-    telefono: Optional[str] = None
-
-    # Servicios
-    servicios: List[ServicioItem]
-
-    # Cantidades (solo para servicios de laboratorio, no topografía)
-    muestras: Optional[int] = None
-    ensayos:  Optional[int] = None
-
-    # Detalles
+    nombre:      str
+    correo:      EmailStr
+    empresa:     Optional[str] = None
+    telefono:    Optional[str] = None
+    servicios:   List[ServicioItem]
     descripcion: Optional[str] = None
-
-    # Mapa
-    ubicacion: Optional[UbicacionModel] = None
+    ubicacion:   Optional[UbicacionModel] = None
 
     @field_validator("nombre")
     @classmethod
@@ -45,7 +35,7 @@ class CotizacionRequest(BaseModel):
     @field_validator("servicios")
     @classmethod
     def al_menos_un_servicio(cls, v: List[ServicioItem]) -> List[ServicioItem]:
-        if len(v) == 0:
+        if not v:
             raise ValueError("Debe seleccionar al menos un servicio")
         return v
 

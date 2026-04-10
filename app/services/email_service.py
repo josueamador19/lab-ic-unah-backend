@@ -1,14 +1,17 @@
 """
 Envío de correos vía Gmail SMTP (App Password).
 
-  1. send_confirmation → correo de confirmación al solicitante
-  2. send_alert        → correo de alerta interna al administrador
+  1. send_confirmation → correo de confirmación al solicitante (SIN el .docx)
+  2. send_alert        → correo de alerta interna al admin CON el .docx adjunto
 """
 import smtplib
 import ssl
 import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+from pathlib import Path
 
 from app.core.config import settings
 from app.models.cotizacion import CotizacionRequest
@@ -16,15 +19,26 @@ from app.models.cotizacion import CotizacionRequest
 logger = logging.getLogger(__name__)
 
 
-# ── Helpers compartidos ───────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _build_servicios_rows(data: CotizacionRequest) -> str:
+    """Filas HTML de la tabla de servicios. Incluye columna de muestras."""
     rows = ""
     for svc in data.servicios:
         sub_html = (
-            f"<br/><span style='font-size:11px;color:#6b7280;font-style:italic'>{svc.sub}</span>"
-            if svc.sub else ""
+            f"<br/><span style='font-size:11px;color:#6b7280;font-style:italic'>"
+            f"{svc.sub}</span>"
+        ) if svc.sub else ""
+
+        muestras_cell = (
+            f"<td style='padding:10px 14px;border-bottom:1px solid #e5e7eb;"
+            f"font-size:13px;color:#1e3a8a;font-weight:700;text-align:center'>"
+            f"{svc.muestras}</td>"
+        ) if svc.muestras is not None else (
+            f"<td style='padding:10px 14px;border-bottom:1px solid #e5e7eb;"
+            f"font-size:11px;color:#9ca3af;text-align:center'>—</td>"
         )
+
         rows += f"""
         <tr>
           <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">
@@ -37,9 +51,30 @@ def _build_servicios_rows(data: CotizacionRequest) -> str:
             {svc.name}{sub_html}
           </td>
           <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;
-                     font-size:11px;color:#6b7280;">{svc.norma}</td>
+                     font-size:11px;color:#6b7280;">{svc.norma or "—"}</td>
+          {muestras_cell}
         </tr>"""
     return rows
+
+
+def _servicios_table_header() -> str:
+    cols = ["Código", "Ensayo", "Norma", "Muestras"]
+    ths  = "".join(
+        f"<th style='padding:10px 14px;text-align:left;font-size:10px;"
+        f"font-weight:700;color:#6b7280;letter-spacing:.06em;"
+        f"text-transform:uppercase;border-bottom:1px solid #e5e7eb;'>{c}</th>"
+        for c in cols
+    )
+    return f"<tr style='background:#f1f5f9;'>{ths}</tr>"
+
+
+def _servicios_txt(data: CotizacionRequest) -> str:
+    lines = []
+    for s in data.servicios:
+        muestras = f" — {s.muestras} muestra{'s' if s.muestras != 1 else ''}" \
+                   if s.muestras is not None else ""
+        lines.append(f"  • [{s.code}] {s.name} — {s.norma or '—'}{muestras}")
+    return "\n".join(lines)
 
 
 # ── Correo de confirmación al solicitante ─────────────────────────────────────
@@ -68,23 +103,17 @@ def _build_html(data: CotizacionRequest) -> str:
             </div>"""
     ) if data.descripcion else ""
 
-    servicios_rows = _build_servicios_rows(data)
-
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 </head>
-<body style="margin:0;padding:0;background:#f3f4f6;
-             font-family:'Segoe UI',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0"
-       style="background:#f3f4f6;padding:40px 16px;">
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:40px 16px;">
   <tr><td align="center">
-  <table width="620" cellpadding="0" cellspacing="0"
-         style="max-width:620px;width:100%;">
+  <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
-    <!-- HEADER -->
     <tr>
       <td style="background:linear-gradient(135deg,#1e3a8a 0%,#3b5bdb 100%);
                  border-radius:16px 16px 0 0;padding:36px 40px;text-align:center;">
@@ -101,12 +130,10 @@ def _build_html(data: CotizacionRequest) -> str:
       </td>
     </tr>
 
-    <!-- CUERPO -->
     <tr>
       <td style="background:#ffffff;padding:36px 40px;">
-
         <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#1e3a8a;">
-          Hola, {nombre_corto} 👋
+          Hola, {nombre_corto} 
         </p>
         <p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.7;">
           Hemos recibido su solicitud de cotización correctamente.
@@ -135,22 +162,8 @@ def _build_html(data: CotizacionRequest) -> str:
         <table width="100%" cellpadding="0" cellspacing="0"
                style="border:1px solid #e5e7eb;border-radius:10px;
                       overflow:hidden;border-collapse:collapse;margin-bottom:24px;">
-          <thead>
-            <tr style="background:#f1f5f9;">
-              <th style="padding:10px 14px;text-align:left;font-size:10px;
-                         font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Código</th>
-              <th style="padding:10px 14px;text-align:left;font-size:10px;
-                         font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Ensayo</th>
-              <th style="padding:10px 14px;text-align:left;font-size:10px;
-                         font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Norma</th>
-            </tr>
-          </thead>
-          <tbody>
-            {servicios_rows}
-          </tbody>
+          <thead>{_servicios_table_header()}</thead>
+          <tbody>{_build_servicios_rows(data)}</tbody>
         </table>
 
         {descripcion_html}
@@ -169,11 +182,9 @@ def _build_html(data: CotizacionRequest) -> str:
             🏛️ &nbsp;Entrega de muestras: Edificio B1, 1er nivel — Lun–Vie 8:00 AM–3:00 PM.
           </p>
         </div>
-
       </td>
     </tr>
 
-    <!-- FOOTER -->
     <tr>
       <td style="background:#1e3a8a;border-radius:0 0 16px 16px;
                  padding:24px 40px;text-align:center;">
@@ -190,7 +201,6 @@ def _build_html(data: CotizacionRequest) -> str:
         </p>
         <p style="margin:12px 0 0;font-size:10px;color:#475569;">
           Este es un correo automático, por favor no responda a este mensaje.
-          Para consultas escríbanos directamente a jefatura.labs.ic@unah.edu.hn
         </p>
       </td>
     </tr>
@@ -203,17 +213,14 @@ def _build_html(data: CotizacionRequest) -> str:
 
 
 def _build_plain(data: CotizacionRequest) -> str:
-    nombre_corto  = data.nombre.strip().split()[0]
-    servicios_txt = "\n".join(
-        f"  • [{s.code}] {s.name} — {s.norma}" for s in data.servicios
-    )
+    nombre_corto = data.nombre.strip().split()[0]
     return f"""Hola, {nombre_corto}.
 
 Hemos recibido su solicitud de cotización correctamente.
 Le responderemos en un plazo de 24 a 48 horas hábiles.
 
 SERVICIOS SOLICITADOS:
-{servicios_txt}
+{_servicios_txt(data)}
 
 {"DETALLES: " + data.descripcion if data.descripcion else ""}
 
@@ -232,12 +239,11 @@ Este es un correo automático, por favor no responda a este mensaje.
 """
 
 
-# ── Correo de alerta interna al administrador ─────────────────────────────────
+# ── Correo de alerta interna al administrador (CON .docx adjunto) ─────────────
 
 def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
-    cantidad      = len(data.servicios)
-    plural        = "s" if cantidad > 1 else ""
-    servicios_rows = _build_servicios_rows(data)
+    cantidad     = len(data.servicios)
+    plural       = "s" if cantidad > 1 else ""
 
     empresa_html = (
         f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
@@ -248,16 +254,6 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
         f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
         f"<strong>Teléfono:</strong> {data.telefono}</p>"
     ) if data.telefono else ""
-
-    muestras_html = (
-        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
-        f"<strong>N° de muestras:</strong> {data.muestras}</p>"
-    ) if data.muestras is not None else ""
-
-    ensayos_html = (
-        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
-        f"<strong>N° de ensayos:</strong> {data.ensayos}</p>"
-    ) if data.ensayos is not None else ""
 
     descripcion_html = (
         f"""<div style="margin-top:16px;padding:14px 18px;background:#f9fafb;
@@ -273,7 +269,9 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
                         border:1px solid #86efac;border-radius:10px;">
               <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#166534;
                         letter-spacing:.08em;text-transform:uppercase;">Ubicación del proyecto</p>
-              <p style="margin:0;font-size:13px;color:#166534;">{data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}</p>
+              <p style="margin:0;font-size:13px;color:#166534;">
+                {data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}
+              </p>
             </div>"""
     ) if data.ubicacion else ""
 
@@ -283,15 +281,11 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 </head>
-<body style="margin:0;padding:0;background:#f3f4f6;
-             font-family:'Segoe UI',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0"
-       style="background:#f3f4f6;padding:40px 16px;">
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:40px 16px;">
   <tr><td align="center">
-  <table width="620" cellpadding="0" cellspacing="0"
-         style="max-width:620px;width:100%;">
+  <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
-    <!-- HEADER -->
     <tr>
       <td style="background:linear-gradient(135deg,#064e3b 0%,#059669 100%);
                  border-radius:16px 16px 0 0;padding:28px 40px;text-align:center;">
@@ -308,11 +302,20 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
       </td>
     </tr>
 
-    <!-- CUERPO -->
     <tr>
       <td style="background:#ffffff;padding:32px 40px;">
 
-        <!-- Datos del solicitante -->
+        <!-- Aviso del adjunto -->
+        <div style="margin-bottom:24px;padding:14px 18px;background:#f0fdf4;
+                    border:1px solid #86efac;border-radius:10px;
+                    display:flex;align-items:center;gap:10px;">
+          <p style="margin:0;font-size:13px;color:#166534;line-height:1.5;">
+            📎 <strong>Cotización Word adjunta.</strong>
+            Ábrala, agregue los precios y envíela al cliente
+            (<a href="mailto:{data.correo}" style="color:#059669;">{data.correo}</a>).
+          </p>
+        </div>
+
         <div style="background:#f8faff;border:1px solid #e0e7ff;border-radius:10px;
                     padding:18px 22px;margin-bottom:24px;">
           <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
@@ -326,11 +329,8 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
           </p>
           {empresa_html}
           {telefono_html}
-          {muestras_html}
-          {ensayos_html}
         </div>
 
-        <!-- Servicios -->
         <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
                   letter-spacing:.08em;text-transform:uppercase;">
           Ensayo{plural} solicitado{plural} ({cantidad})
@@ -338,31 +338,15 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
         <table width="100%" cellpadding="0" cellspacing="0"
                style="border:1px solid #e5e7eb;border-radius:10px;
                       overflow:hidden;border-collapse:collapse;margin-bottom:8px;">
-          <thead>
-            <tr style="background:#f1f5f9;">
-              <th style="padding:10px 14px;text-align:left;font-size:10px;
-                         font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Código</th>
-              <th style="padding:10px 14px;text-align:left;font-size:10px;
-                         font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Ensayo</th>
-              <th style="padding:10px 14px;text-align:left;font-size:10px;
-                         font-weight:700;color:#6b7280;letter-spacing:.06em;
-                         text-transform:uppercase;border-bottom:1px solid #e5e7eb;">Norma</th>
-            </tr>
-          </thead>
-          <tbody>
-            {servicios_rows}
-          </tbody>
+          <thead>{_servicios_table_header()}</thead>
+          <tbody>{_build_servicios_rows(data)}</tbody>
         </table>
 
         {descripcion_html}
         {ubicacion_html}
-
       </td>
     </tr>
 
-    <!-- FOOTER -->
     <tr>
       <td style="background:#064e3b;border-radius:0 0 16px 16px;
                  padding:20px 40px;text-align:center;">
@@ -383,25 +367,23 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
 
 
 def _build_alert_plain(data: CotizacionRequest, fila: int) -> str:
-    servicios_txt = "\n".join(
-        f"  • [{s.code}] {s.name} — {s.norma}" for s in data.servicios
-    )
-    muestras_txt  = f"\nN° de muestras : {data.muestras}" if data.muestras is not None else ""
-    ensayos_txt   = f"\nN° de ensayos  : {data.ensayos}"  if data.ensayos  is not None else ""
     ubicacion_txt = (
         f"\nUbicación      : {data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}"
     ) if data.ubicacion else ""
 
-    return f"""🔔 NUEVA SOLICITUD DE COTIZACIÓN — Ref. #{fila}
+    return f"""NUEVA SOLICITUD DE COTIZACIÓN — Ref. #{fila}
+
+📎 El archivo Word de la cotización va adjunto en este correo.
+   Ábralo, agregue los precios y envíelo al cliente: {data.correo}
 
 SOLICITANTE
   Nombre   : {data.nombre}
   Correo   : {data.correo}
   Empresa  : {data.empresa  or '—'}
-  Teléfono : {data.telefono or '—'}{muestras_txt}{ensayos_txt}
+  Teléfono : {data.telefono or '—'}
 
 SERVICIOS SOLICITADOS ({len(data.servicios)}):
-{servicios_txt}
+{_servicios_txt(data)}
 
 {"DETALLES: " + data.descripcion if data.descripcion else ""}{ubicacion_txt}
 
@@ -410,24 +392,25 @@ Sistema de cotizaciones — Lab. Ingeniería Civil UNAH
 """
 
 
-# ── Funciones públicas ────────────────────────────────────────────────────────
+# ── SMTP ──────────────────────────────────────────────────────────────────────
 
 def _smtp_send(msg: MIMEMultipart) -> None:
-    """Abre conexión SMTP y envía el mensaje."""
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
         server.login(settings.SMTP_USER, settings.SMTP_PASS)
         server.send_message(msg)
 
 
+# ── Funciones públicas ────────────────────────────────────────────────────────
+
 def send_confirmation(data: CotizacionRequest, fila: int) -> None:
-    """Correo de confirmación al solicitante."""
+    """Correo al cliente: solo confirmación, sin adjuntos."""
     if not settings.SMTP_USER or not settings.SMTP_PASS:
-        logger.warning("[EMAIL] SMTP_USER o SMTP_PASS no configurados — correo omitido.")
+        logger.warning("[EMAIL] SMTP no configurado — correo omitido.")
         return
 
     msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"✅ Solicitud recibida — Lab. Ingeniería Civil UNAH (Ref. #{fila})"
+    msg["Subject"] = f"Solicitud recibida — Lab. Ingeniería Civil UNAH (Ref. #{fila})"
     msg["From"]    = settings.SMTP_USER
     msg["To"]      = data.correo
 
@@ -437,22 +420,50 @@ def send_confirmation(data: CotizacionRequest, fila: int) -> None:
     _smtp_send(msg)
     logger.info(f"[EMAIL] Confirmación enviada a {data.correo} — Ref. #{fila}")
 
-    # Alerta interna — se envía en el mismo bloque para reutilizar la conexión
-    send_alert(data, fila)
 
+def send_alert(data: CotizacionRequest, fila: int, docx_path: Path | None = None) -> None:
+    """
+    Correo interno al admin con el .docx pre-llenado adjunto.
 
-def send_alert(data: CotizacionRequest, fila: int) -> None:
-    """Correo de alerta interna al administrador (SMTP_USER)."""
+    docx_path: Path del archivo generado por docx_service.generar_cotizacion()
+               Si es None, se envía igualmente pero sin adjunto.
+    """
     if not settings.SMTP_USER or not settings.SMTP_PASS:
         return
 
-    msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"🔔 Nueva solicitud #{fila} — {data.nombre} ({len(data.servicios)} servicio{'s' if len(data.servicios) > 1 else ''})"
-    msg["From"]    = settings.SMTP_USER
-    msg["To"]      = settings.SMTP_USER   # <-- a ti mismo
+    # Usamos mixed para poder adjuntar el archivo
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = (
+        f"Nueva solicitud #{fila} — {data.nombre} "
+        f"({len(data.servicios)} servicio{'s' if len(data.servicios) > 1 else ''})"
+    )
+    msg["From"] = settings.SMTP_USER
+    msg["To"]   = settings.SMTP_USER
 
-    msg.attach(MIMEText(_build_alert_plain(data, fila), "plain", "utf-8"))
-    msg.attach(MIMEText(_build_alert_html(data, fila),  "html",  "utf-8"))
+    # Parte de texto/html
+    body = MIMEMultipart("alternative")
+    body.attach(MIMEText(_build_alert_plain(data, fila), "plain", "utf-8"))
+    body.attach(MIMEText(_build_alert_html(data, fila),  "html",  "utf-8"))
+    msg.attach(body)
+
+    # Adjuntar el .docx si existe
+    if docx_path and docx_path.exists():
+        with open(docx_path, "rb") as f:
+            part = MIMEBase(
+                "application",
+                "vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header(
+            "Content-Disposition",
+            "attachment",
+            filename=docx_path.name,
+        )
+        msg.attach(part)
+        logger.info(f"[EMAIL] Adjuntando {docx_path.name} a la alerta interna")
+    else:
+        logger.warning(f"[EMAIL] docx_path no encontrado — alerta sin adjunto (Ref. #{fila})")
 
     _smtp_send(msg)
     logger.info(f"[EMAIL] Alerta interna enviada a {settings.SMTP_USER} — Ref. #{fila}")
