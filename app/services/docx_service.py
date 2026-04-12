@@ -13,7 +13,6 @@ Dependencias:
   pip install python-docx
 """
 
-import copy
 from datetime import date
 from pathlib import Path
 
@@ -23,9 +22,9 @@ from docx.oxml.ns import qn
 from app.models.cotizacion import CotizacionRequest
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
-BASE_DIR     = Path(__file__).parent.parent.parent          # raíz del proyecto
-TEMPLATE     = BASE_DIR / "plantilla_cotizacion.docx"       # tu plantilla original
-DOCX_DIR     = BASE_DIR / "cotizaciones_generadas"          # carpeta de salida
+BASE_DIR  = Path(__file__).parent.parent.parent      # raíz del proyecto
+TEMPLATE  = BASE_DIR / "plantilla_cotizacion.docx"   # plantilla original
+DOCX_DIR  = BASE_DIR / "cotizaciones_generadas"      # carpeta de salida
 DOCX_DIR.mkdir(exist_ok=True)
 
 
@@ -52,21 +51,23 @@ def _write(cell, text: str):
     text = str(text) if text is not None else ""
     para = cell.paragraphs[0]
 
-    # Recolectar todos los runs de todos los párrafos de la celda
     all_runs = [r for p in cell.paragraphs for r in p.runs]
 
     if all_runs:
-        # Usar el formato del primer run; borrar el resto
         first_run = all_runs[0]
         for r in all_runs[1:]:
             r.text = ""
         first_run.text = text
     else:
-        # Celda sin runs — agregar uno limpio
         para.add_run(text)
 
 
-def _numero_cotizacion(fila: int) -> str:
+def _fmt(value: float) -> str:
+    """Formatea un número como moneda con separador de miles y 2 decimales."""
+    return f"{value:,.2f}"
+
+
+def numero_cotizacion(fila: int) -> str:
     year = date.today().year
     return f"COT-{fila:04d}-{year}"
 
@@ -79,14 +80,25 @@ def generar_cotizacion(data: CotizacionRequest, fila: int) -> Path:
     """
     Llena la plantilla .docx con los datos del cliente y la guarda en disco.
 
-    Retorna el Path del archivo generado (ej. cotizaciones_generadas/COT-0042.docx)
+    Columnas de la Tabla 2 (unique cells por fila de datos):
+      0 = No.
+      1 = Descripción
+      2 = Norma
+      3 = No. Muestras
+      4 = P. Unitario   ← precio unitario del servicio
+      5 = Total         ← muestras × precio, calculado en Python
+
+    Filas especiales:
+      12 → SUBTOTAL  ← suma de todos los totales, calculada en Python
+      13 → TOTAL     ← mismo valor que subtotal (el admin ajusta si aplica)
+
+    Retorna el Path del archivo generado.
     """
-    numero = _numero_cotizacion(fila)
+    numero = numero_cotizacion(fila)
     doc    = Document(str(TEMPLATE))
     tables = doc.tables
 
     # ── TABLA 0 — Número de cotización ────────────────────────────────────────
-    # cell[1] → párrafo 0 = "COTIZACIÓN", párrafo 1 = número
     cot_cell = tables[0].rows[0].cells[1]
     if len(cot_cell.paragraphs) >= 2:
         num_para = cot_cell.paragraphs[1]
@@ -99,64 +111,57 @@ def generar_cotizacion(data: CotizacionRequest, fila: int) -> Path:
     t1 = tables[1]
 
     def fill_t1(row_idx: int, col_idx: int, value: str):
-        """Escribe en la celda de valor (columna derecha) de la tabla 1."""
         unique = _unique_cells(t1.rows[row_idx])
         if col_idx < len(unique):
             _write(unique[col_idx], value)
 
-    hoy         = date.today().strftime("%d/%m/%Y")
-    nombre      = data.nombre
-    empresa     = data.empresa or ""
-    contacto    = f"{nombre}" + (f" — {empresa}" if empresa else "")
-    direccion   = ""
+    hoy           = date.today().strftime("%d/%m/%Y")
+    nombre        = data.nombre
+    empresa       = data.empresa or ""
+    contacto      = nombre + (f" — {empresa}" if empresa else "")
     ubicacion_txt = ""
 
     if data.ubicacion:
         ubicacion_txt = data.ubicacion.address or f"{data.ubicacion.lat}, {data.ubicacion.lng}"
 
-    # row1 col1 → Nombre / Razón Social
-    fill_t1(1, 1, empresa or nombre)
-    # row2 col1 → Dirección (usamos la del mapa si existe)
-    fill_t1(2, 1, ubicacion_txt)
-    # row3 col1 → Teléfono | col3 → Correo
-    fill_t1(3, 1, data.telefono or "")
-    fill_t1(3, 3, data.correo)
-    # row4 col1 → RTN (vacío, admin lo completa) | col3 → Fecha de solicitud
-    fill_t1(4, 1, "")
-    fill_t1(4, 3, hoy)
-    # row5 col1 → Nombre del Proyecto / Obra
-    fill_t1(5, 1, data.descripcion or "")
-    # row6 col1 → Ubicación
-    fill_t1(6, 1, ubicacion_txt)
-    # row7 col1 → Contacto
-    fill_t1(7, 1, contacto)
+    fill_t1(1, 1, empresa or nombre)       # Nombre / Razón Social
+    fill_t1(2, 1, ubicacion_txt)           # Dirección
+    fill_t1(3, 1, data.telefono or "")     # Teléfono
+    fill_t1(3, 3, data.correo)             # Correo
+    fill_t1(4, 1, "")                      # RTN (admin lo completa)
+    fill_t1(4, 3, hoy)                     # Fecha de solicitud
+    fill_t1(5, 1, data.descripcion or "")  # Nombre del Proyecto / Obra
+    fill_t1(6, 1, ubicacion_txt)           # Ubicación
+    fill_t1(7, 1, contacto)                # Contacto
 
     # ── TABLA 2 — Detalle de ensayos ──────────────────────────────────────────
-    # Filas de datos: rows 2–11 (10 filas, numeradas 1–10)
-    # Columnas únicas por fila de datos:
-    #   0=No. | 1=Descripción | 2=Norma | 3=No.Muestras | 5=P.Unitario | 7=Total
-    t2          = tables[2]
-    DATA_START  = 2          # índice de la primera fila de datos
-    MAX_ROWS    = 10
+    t2         = tables[2]
+    DATA_START = 2      # índice de la primera fila de datos
+    MAX_ROWS   = 10
 
     servicios = data.servicios[:MAX_ROWS]
 
+    # ── Llenar filas y acumular subtotal ──────────────────────────────────────
+    subtotal = 0.0
+
     for i, svc in enumerate(servicios):
-        row     = t2.rows[DATA_START + i]
-        unique  = _unique_cells(row)
-        # unique[0]=No, unique[1]=Descripción, unique[2]=Norma,
-        # unique[3]=Muestras, unique[4]=P.Unitario, unique[5]=Total
-        descripcion = svc.name + (f"\n({svc.sub})" if svc.sub else "")
-        muestras    = str(svc.muestras) if svc.muestras is not None else ""
+        muestras = svc.muestras or 0
+        precio   = float(getattr(svc, 'precio', None) or 0)
+        total    = muestras * precio
+        subtotal += total
+
+        row    = t2.rows[DATA_START + i]
+        unique = _unique_cells(row)
+
+        descripcion = svc.name + (f"\n({svc.sub})" if getattr(svc, 'sub', None) else "")
 
         if len(unique) > 1: _write(unique[1], descripcion)
         if len(unique) > 2: _write(unique[2], svc.norma or "")
-        if len(unique) > 3: _write(unique[3], muestras)
-        # P. Unitario y Total los deja el admin — se limpian para que estén en blanco
-        if len(unique) > 4: _write(unique[4], "")
-        if len(unique) > 5: _write(unique[5], "")
+        if len(unique) > 3: _write(unique[3], str(muestras) if muestras else "")
+        if len(unique) > 4: _write(unique[4], _fmt(precio))
+        if len(unique) > 5: _write(unique[5], _fmt(total))
 
-    # Limpiar filas sobrantes (las que no tienen servicio)
+    # Limpiar filas sobrantes (sin servicio)
     for i in range(len(servicios), MAX_ROWS):
         row    = t2.rows[DATA_START + i]
         unique = _unique_cells(row)
@@ -164,17 +169,18 @@ def generar_cotizacion(data: CotizacionRequest, fila: int) -> Path:
             if col < len(unique):
                 _write(unique[col], "")
 
-    # SUBTOTAL y TOTAL — dejar en blanco para que el admin los calcule
-    for row_idx in [12, 13]:
-        row    = t2.rows[row_idx]
-        unique = _unique_cells(row)
-        if len(unique) > 1:
-            _write(unique[1], "")
+    # ── SUBTOTAL — fila 12 ────────────────────────────────────────────────────
+    row_sub    = t2.rows[12]
+    unique_sub = _unique_cells(row_sub)
+    if len(unique_sub) > 1:
+        _write(unique_sub[-1], _fmt(subtotal))
 
-    # ── TABLA 3 — Condiciones: Observaciones ─────────────────────────────────
-    # cell[1] col derecha → "Observaciones:" + espacio para notas del admin
-    # No tocamos las condiciones fijas (izquierda); solo limpiamos observaciones.
-    # (Ya están en blanco en la plantilla — no hace falta modificar)
+    # ── TOTAL GENERAL — fila 13 ───────────────────────────────────────────────
+    # Igual al subtotal; el admin puede ajustar manualmente si aplica descuento
+    row_tot    = t2.rows[13]
+    unique_tot = _unique_cells(row_tot)
+    if len(unique_tot) > 1:
+        _write(unique_tot[-1], _fmt(subtotal))
 
     # ── Guardar ───────────────────────────────────────────────────────────────
     output_path = DOCX_DIR / f"{numero}.docx"

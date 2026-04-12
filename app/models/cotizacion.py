@@ -5,9 +5,10 @@ from typing import List, Optional
 class ServicioItem(BaseModel):
     code:     str
     name:     str
-    norma:    Optional[str] = None  # null para servicios de topografía
-    sub:      Optional[str] = None
-    muestras: Optional[int] = None  # por servicio, solo lab (no topo)
+    norma:    Optional[str]   = None  # null para servicios de topografía
+    sub:      Optional[str]   = None
+    muestras: Optional[int]   = None  # por servicio, solo lab (no topo)
+    precio:   Optional[float] = None  # precio unitario del servicio
 
 
 class UbicacionModel(BaseModel):

@@ -9,12 +9,12 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 from googleapiclient.errors import HttpError
 from pathlib import Path
+import logging
 
 from app.models.cotizacion import CotizacionRequest, CotizacionResponse
 from app.services.sheets_service import append_cotizacion
 from app.services.email_service import send_confirmation, send_alert
-from app.services.docx_service import generar_cotizacion, DOCX_DIR, _numero_cotizacion
-import logging
+from app.services.docx_service import generar_cotizacion, DOCX_DIR, numero_cotizacion
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,7 +84,7 @@ async def descargar_docx(fila: int):
     """
     Descarga el .docx desde el servidor como respaldo si el adjunto no llegó.
     """
-    numero    = _numero_cotizacion(fila)
+    numero    = numero_cotizacion(fila)
     docx_path = DOCX_DIR / f"{numero}.docx"
 
     if not docx_path.exists():
