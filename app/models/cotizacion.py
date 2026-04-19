@@ -5,10 +5,10 @@ from typing import List, Optional
 class ServicioItem(BaseModel):
     code:     str
     name:     str
-    norma:    Optional[str]   = None  # null para servicios de topografía
+    norma:    Optional[str]   = None
     sub:      Optional[str]   = None
-    muestras: Optional[int]   = None  # por servicio, solo lab (no topo)
-    precio:   Optional[float] = None  # precio unitario del servicio
+    muestras: Optional[int]   = None
+    precio:   Optional[float] = None
 
 
 class UbicacionModel(BaseModel):
@@ -18,19 +18,43 @@ class UbicacionModel(BaseModel):
 
 
 class CotizacionRequest(BaseModel):
-    nombre:      str
-    correo:      EmailStr
-    empresa:     Optional[str] = None
-    telefono:    Optional[str] = None
-    servicios:   List[ServicioItem]
-    descripcion: Optional[str] = None
-    ubicacion:   Optional[UbicacionModel] = None
+    nombre:            str
+    correo:            EmailStr
+    empresa:           str
+    telefono:          str
+    rtn:               Optional[str] = None
+    nombreProyecto:    str
+    direccionProyecto: Optional[str] = None
+    descripcion:       Optional[str] = None
+    servicios:         List[ServicioItem]
+    ubicacion:         Optional[UbicacionModel] = None
 
     @field_validator("nombre")
     @classmethod
     def nombre_no_vacio(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("El nombre no puede estar vacío")
+        return v.strip()
+
+    @field_validator("empresa")
+    @classmethod
+    def empresa_no_vacia(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("La empresa o institución no puede estar vacía")
+        return v.strip()
+
+    @field_validator("telefono")
+    @classmethod
+    def telefono_no_vacio(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("El teléfono no puede estar vacío")
+        return v.strip()
+
+    @field_validator("nombreProyecto")
+    @classmethod
+    def nombre_proyecto_no_vacio(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("El nombre del proyecto no puede estar vacío")
         return v.strip()
 
     @field_validator("servicios")

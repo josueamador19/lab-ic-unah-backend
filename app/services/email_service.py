@@ -77,22 +77,25 @@ def _servicios_txt(data: CotizacionRequest) -> str:
     return "\n".join(lines)
 
 
+def _info_row(label: str, value: str) -> str:
+    return (
+        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
+        f"<strong>{label}:</strong> {value}</p>"
+    )
+
+
+def _optional_info_row(label: str, value: str | None) -> str:
+    if not value:
+        return ""
+    return _info_row(label, value)
+
+
 # ── Correo de confirmación al solicitante ─────────────────────────────────────
 
 def _build_html(data: CotizacionRequest) -> str:
     nombre_corto = data.nombre.strip().split()[0]
     cantidad     = len(data.servicios)
     plural       = "s" if cantidad > 1 else ""
-
-    empresa_html = (
-        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
-        f"<strong>Empresa / Institución:</strong> {data.empresa}</p>"
-    ) if data.empresa else ""
-
-    telefono_html = (
-        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
-        f"<strong>Teléfono:</strong> {data.telefono}</p>"
-    ) if data.telefono else ""
 
     descripcion_html = (
         f"""<div style="margin-top:24px;padding:16px 20px;background:#f9fafb;
@@ -133,7 +136,7 @@ def _build_html(data: CotizacionRequest) -> str:
     <tr>
       <td style="background:#ffffff;padding:36px 40px;">
         <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#1e3a8a;">
-          Hola, {nombre_corto} 
+          Hola, {nombre_corto}
         </p>
         <p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.7;">
           Hemos recibido su solicitud de cotización correctamente.
@@ -141,18 +144,25 @@ def _build_html(data: CotizacionRequest) -> str:
           en un plazo de <strong>24 a 48 horas hábiles</strong>.
         </p>
 
+        <!-- Datos del solicitante -->
         <div style="background:#f8faff;border:1px solid #e0e7ff;border-radius:10px;
-                    padding:18px 22px;margin-bottom:24px;">
+                    padding:18px 22px;margin-bottom:16px;">
           <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
                     letter-spacing:.08em;text-transform:uppercase;">Datos de su solicitud</p>
-          <p style="margin:0 0 6px;font-size:13px;color:#374151;">
-            <strong>Nombre:</strong> {data.nombre}
-          </p>
-          <p style="margin:0 0 6px;font-size:13px;color:#374151;">
-            <strong>Correo:</strong> {data.correo}
-          </p>
-          {empresa_html}
-          {telefono_html}
+          {_info_row("Nombre",               data.nombre)}
+          {_info_row("Correo",               data.correo)}
+          {_info_row("Empresa / Institución", data.empresa)}
+          {_info_row("Teléfono",             data.telefono)}
+          {_optional_info_row("RTN",         data.rtn)}
+        </div>
+
+        <!-- Datos del proyecto -->
+        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;
+                    padding:18px 22px;margin-bottom:24px;">
+          <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
+                    letter-spacing:.08em;text-transform:uppercase;">Datos del proyecto</p>
+          {_info_row("Nombre del proyecto",             data.nombreProyecto)}
+          {_optional_info_row("Dirección del proyecto", data.direccionProyecto)}
         </div>
 
         <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
@@ -214,10 +224,22 @@ def _build_html(data: CotizacionRequest) -> str:
 
 def _build_plain(data: CotizacionRequest) -> str:
     nombre_corto = data.nombre.strip().split()[0]
+    rtn_txt      = f"\n  RTN      : {data.rtn}"              if data.rtn               else ""
+    dir_proy_txt = f"\n  Dirección: {data.direccionProyecto}" if data.direccionProyecto else ""
+
     return f"""Hola, {nombre_corto}.
 
 Hemos recibido su solicitud de cotización correctamente.
 Le responderemos en un plazo de 24 a 48 horas hábiles.
+
+DATOS DE SU SOLICITUD
+  Nombre   : {data.nombre}
+  Correo   : {data.correo}
+  Empresa  : {data.empresa}
+  Teléfono : {data.telefono}{rtn_txt}
+
+PROYECTO
+  Nombre   : {data.nombreProyecto}{dir_proy_txt}
 
 SERVICIOS SOLICITADOS:
 {_servicios_txt(data)}
@@ -242,18 +264,8 @@ Este es un correo automático, por favor no responda a este mensaje.
 # ── Correo de alerta interna al administrador (CON .docx adjunto) ─────────────
 
 def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
-    cantidad     = len(data.servicios)
-    plural       = "s" if cantidad > 1 else ""
-
-    empresa_html = (
-        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
-        f"<strong>Empresa / Institución:</strong> {data.empresa}</p>"
-    ) if data.empresa else ""
-
-    telefono_html = (
-        f"<p style='margin:0 0 6px;font-size:13px;color:#374151;'>"
-        f"<strong>Teléfono:</strong> {data.telefono}</p>"
-    ) if data.telefono else ""
+    cantidad = len(data.servicios)
+    plural   = "s" if cantidad > 1 else ""
 
     descripcion_html = (
         f"""<div style="margin-top:16px;padding:14px 18px;background:#f9fafb;
@@ -268,7 +280,7 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
         f"""<div style="margin-top:16px;padding:14px 18px;background:#f0fdf4;
                         border:1px solid #86efac;border-radius:10px;">
               <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#166534;
-                        letter-spacing:.08em;text-transform:uppercase;">Ubicación del proyecto</p>
+                        letter-spacing:.08em;text-transform:uppercase;">Ubicación del proyecto (mapa)</p>
               <p style="margin:0;font-size:13px;color:#166534;">
                 {data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}
               </p>
@@ -294,7 +306,7 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
           Alerta interna — Lab. Ingeniería Civil UNAH
         </p>
         <h1 style="margin:0 0 4px;font-size:20px;font-weight:800;color:#ffffff;">
-          🔔 Nueva solicitud de cotización
+          Nueva solicitud de cotización
         </h1>
         <p style="margin:0;font-size:12px;color:#a7f3d0;">
           Referencia de fila en Sheets: <strong style="color:#fff;">#{fila}</strong>
@@ -307,8 +319,7 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
 
         <!-- Aviso del adjunto -->
         <div style="margin-bottom:24px;padding:14px 18px;background:#f0fdf4;
-                    border:1px solid #86efac;border-radius:10px;
-                    display:flex;align-items:center;gap:10px;">
+                    border:1px solid #86efac;border-radius:10px;">
           <p style="margin:0;font-size:13px;color:#166534;line-height:1.5;">
             📎 <strong>Cotización Word adjunta.</strong>
             Ábrala, agregue los precios y envíela al cliente
@@ -316,19 +327,25 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
           </p>
         </div>
 
+        <!-- Datos del solicitante -->
         <div style="background:#f8faff;border:1px solid #e0e7ff;border-radius:10px;
-                    padding:18px 22px;margin-bottom:24px;">
+                    padding:18px 22px;margin-bottom:16px;">
           <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
                     letter-spacing:.08em;text-transform:uppercase;">Datos del solicitante</p>
-          <p style="margin:0 0 6px;font-size:13px;color:#374151;">
-            <strong>Nombre:</strong> {data.nombre}
-          </p>
-          <p style="margin:0 0 6px;font-size:13px;color:#374151;">
-            <strong>Correo:</strong>
-            <a href="mailto:{data.correo}" style="color:#3b5bdb;">{data.correo}</a>
-          </p>
-          {empresa_html}
-          {telefono_html}
+          {_info_row("Nombre",               data.nombre)}
+          {_info_row("Correo",               f'<a href="mailto:{data.correo}" style="color:#3b5bdb;">{data.correo}</a>')}
+          {_info_row("Empresa / Institución", data.empresa)}
+          {_info_row("Teléfono",             data.telefono)}
+          {_optional_info_row("RTN",         data.rtn)}
+        </div>
+
+        <!-- Datos del proyecto -->
+        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;
+                    padding:18px 22px;margin-bottom:24px;">
+          <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
+                    letter-spacing:.08em;text-transform:uppercase;">Datos del proyecto</p>
+          {_info_row("Nombre del proyecto",             data.nombreProyecto)}
+          {_optional_info_row("Dirección del proyecto", data.direccionProyecto)}
         </div>
 
         <p style="margin:0 0 10px;font-size:10px;font-weight:700;color:#6b7280;
@@ -367,8 +384,11 @@ def _build_alert_html(data: CotizacionRequest, fila: int) -> str:
 
 
 def _build_alert_plain(data: CotizacionRequest, fila: int) -> str:
+    rtn_txt       = f"\n  RTN      : {data.rtn}"              if data.rtn               else ""
+    dir_proy_txt  = f"\n  Dirección: {data.direccionProyecto}" if data.direccionProyecto else ""
     ubicacion_txt = (
-        f"\nUbicación      : {data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}"
+        f"\nUBICACIÓN (MAPA)\n"
+        f"  {data.ubicacion.address or f'{data.ubicacion.lat}, {data.ubicacion.lng}'}"
     ) if data.ubicacion else ""
 
     return f"""NUEVA SOLICITUD DE COTIZACIÓN — Ref. #{fila}
@@ -379,8 +399,11 @@ def _build_alert_plain(data: CotizacionRequest, fila: int) -> str:
 SOLICITANTE
   Nombre   : {data.nombre}
   Correo   : {data.correo}
-  Empresa  : {data.empresa  or '—'}
-  Teléfono : {data.telefono or '—'}
+  Empresa  : {data.empresa}
+  Teléfono : {data.telefono}{rtn_txt}
+
+PROYECTO
+  Nombre   : {data.nombreProyecto}{dir_proy_txt}
 
 SERVICIOS SOLICITADOS ({len(data.servicios)}):
 {_servicios_txt(data)}
@@ -431,7 +454,6 @@ def send_alert(data: CotizacionRequest, fila: int, docx_path: Path | None = None
     if not settings.SMTP_USER or not settings.SMTP_PASS:
         return
 
-    # Usamos mixed para poder adjuntar el archivo
     msg = MIMEMultipart("mixed")
     msg["Subject"] = (
         f"Nueva solicitud #{fila} — {data.nombre} "
@@ -440,13 +462,11 @@ def send_alert(data: CotizacionRequest, fila: int, docx_path: Path | None = None
     msg["From"] = settings.SMTP_USER
     msg["To"]   = settings.SMTP_USER
 
-    # Parte de texto/html
     body = MIMEMultipart("alternative")
     body.attach(MIMEText(_build_alert_plain(data, fila), "plain", "utf-8"))
     body.attach(MIMEText(_build_alert_html(data, fila),  "html",  "utf-8"))
     msg.attach(body)
 
-    # Adjuntar el .docx si existe
     if docx_path and docx_path.exists():
         with open(docx_path, "rb") as f:
             part = MIMEBase(
@@ -455,11 +475,7 @@ def send_alert(data: CotizacionRequest, fila: int, docx_path: Path | None = None
             )
             part.set_payload(f.read())
         encoders.encode_base64(part)
-        part.add_header(
-            "Content-Disposition",
-            "attachment",
-            filename=docx_path.name,
-        )
+        part.add_header("Content-Disposition", "attachment", filename=docx_path.name)
         msg.attach(part)
         logger.info(f"[EMAIL] Adjuntando {docx_path.name} a la alerta interna")
     else:

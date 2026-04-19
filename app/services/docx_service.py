@@ -80,6 +80,17 @@ def generar_cotizacion(data: CotizacionRequest, fila: int) -> Path:
     """
     Llena la plantilla .docx con los datos del cliente y la guarda en disco.
 
+    Mapeo Tabla 1 — Datos del cliente:
+      Fila 1, col 1 → Nombre                    (data.nombre)
+      Fila 2, col 1 → Dirección                 (dirección del mapa)
+      Fila 3, col 1 → Teléfono                  (data.telefono)
+      Fila 3, col 3 → Correo                    (data.correo)
+      Fila 4, col 1 → RTN                       (data.rtn)
+      Fila 4, col 3 → Fecha de solicitud        (hoy)
+      Fila 5, col 1 → Nombre del proyecto       (data.nombreProyecto)
+      Fila 6, col 1 → Ubicación del proyecto    (data.direccionProyecto)
+      Fila 7, col 1 → Contacto                  (correo, teléfono)
+
     Columnas de la Tabla 2 (unique cells por fila de datos):
       0 = No.
       1 = Descripción
@@ -115,24 +126,25 @@ def generar_cotizacion(data: CotizacionRequest, fila: int) -> Path:
         if col_idx < len(unique):
             _write(unique[col_idx], value)
 
-    hoy           = date.today().strftime("%d/%m/%Y")
-    nombre        = data.nombre
-    empresa       = data.empresa or ""
-    contacto      = nombre + (f" — {empresa}" if empresa else "")
-    ubicacion_txt = ""
+    hoy = date.today().strftime("%d/%m/%Y")
 
+    # Dirección desde el mapa (geocodificación inversa)
+    direccion_mapa = ""
     if data.ubicacion:
-        ubicacion_txt = data.ubicacion.address or f"{data.ubicacion.lat}, {data.ubicacion.lng}"
+        direccion_mapa = data.ubicacion.address or f"{data.ubicacion.lat}, {data.ubicacion.lng}"
 
-    fill_t1(1, 1, empresa or nombre)       # Nombre / Razón Social
-    fill_t1(2, 1, ubicacion_txt)           # Dirección
-    fill_t1(3, 1, data.telefono or "")     # Teléfono
-    fill_t1(3, 3, data.correo)             # Correo
-    fill_t1(4, 1, "")                      # RTN (admin lo completa)
-    fill_t1(4, 3, hoy)                     # Fecha de solicitud
-    fill_t1(5, 1, data.descripcion or "")  # Nombre del Proyecto / Obra
-    fill_t1(6, 1, ubicacion_txt)           # Ubicación
-    fill_t1(7, 1, contacto)                # Contacto
+    # Contacto: correo y teléfono separados por coma
+    contacto = f"{data.correo}, {data.telefono}"
+
+    fill_t1(1, 1, data.nombre)                          # Nombre del cliente
+    fill_t1(2, 1, direccion_mapa)                       # Dirección (mapa)
+    fill_t1(3, 1, data.telefono)                        # Teléfono
+    fill_t1(3, 3, data.correo)                          # Correo
+    fill_t1(4, 1, data.rtn or "")                       # RTN (del formulario)
+    fill_t1(4, 3, hoy)                                  # Fecha de solicitud
+    fill_t1(5, 1, data.nombreProyecto)                  # Nombre del proyecto
+    fill_t1(6, 1, data.direccionProyecto or "")         # Ubicación del proyecto
+    fill_t1(7, 1, contacto)                             # Contacto (correo, teléfono)
 
     # ── TABLA 2 — Detalle de ensayos ──────────────────────────────────────────
     t2         = tables[2]
