@@ -1,16 +1,14 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-dist/
-build/
+# Dependencias
+node_modules/
 
-# Env & credenciales — NUNCA subir al repo
+# Variables de entorno — NUNCA subir al repo
 .env
+
+# Credenciales Google
 credentials/
-*.json
+
+# Cotizaciones generadas
+cotizaciones_generadas/
 
 # IDE
 .vscode/
@@ -18,3 +16,8 @@ credentials/
 
 # OS
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
