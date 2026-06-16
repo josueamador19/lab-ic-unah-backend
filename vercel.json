@@ -1,4 +1,10 @@
 {
   "version": 2,
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "includeFiles": "plantilla_cotizacion.docx"
+    }
+  }
 }
